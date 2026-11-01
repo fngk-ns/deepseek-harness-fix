@@ -1,4 +1,8 @@
-/** Native account commands and Gateway state stream; no renderer receives credentials. */
+/**
+ * Native account commands and Gateway state stream; no renderer receives credentials.
+ * The desktop signs in to AI Route (`aiRoute` Remote namespace); its view is projected onto the
+ * account shape the welcome window renders.
+ */
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
 import { parseRemoteStreamServerMessage, REMOTE_STREAM_MUX_PATH } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
@@ -6,6 +10,30 @@ import type { AccountClientMetadata, AccountView, SignInAttemptId } from '@deeps
 
 /** Authenticated unary caller shared with native onboarding. */
 export type AccountInvoke = (request: { namespace: string; method: string; args: Record<string, unknown> }) => Promise<unknown>
+
+/** The single AI Route attempt id: the account service keeps at most one attempt. */
+const AI_ROUTE_ATTEMPT_ID = 'ai-route' as SignInAttemptId
+
+/**
+ * Project an AI Route account view (`signed-in` / `signed-out`, one unnamed attempt) onto the welcome account shape.
+ * @param value - wire value of `aiRoute/*`.
+ * @returns the account-shaped wire value, validated by {@link accountView} afterwards.
+ */
+function fromAiRoute(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || !('status' in value) || !('attempt' in value)) return value
+  const view = value as { status: unknown; attempt: unknown; dashboardUrl?: unknown }
+  const dashboard = typeof view.dashboardUrl === 'string' ? view.dashboardUrl : 'https://aiapi.hoj.kr'
+  const attempt = view.attempt
+  return {
+    status: view.status === 'signed-in' ? 'credential-stored' : view.status,
+    links: { usageUrl: dashboard, topUpUrl: dashboard },
+    attempt: typeof attempt !== 'object' || attempt === null ? null : {
+      id: AI_ROUTE_ATTEMPT_ID,
+      ...attempt,
+      ...('error' in attempt ? { errorCode: 'protocol' } : {}),
+    },
+  }
+}
 
 /** Decode the UI-safe state received across HTTP or WebSocket. @param value - wire value. @returns account projection. */
 export function accountView(value: unknown): AccountView {
@@ -66,7 +94,7 @@ export interface DesktopAccountBackend {
   /**
    * @param listener - state recipient.
    * @param failed - stream failure recipient.
-   * @param expired - live credential-expiry recipient.
+   * @param expired - live credential-expiry recipient (a stored account that disappears).
    * @param onAnalyticsEnabledChanged - optional Desktop collection-policy recipient; disconnected streams publish false.
    * @returns stream disposer.
    */
@@ -77,7 +105,7 @@ export interface DesktopAccountBackend {
 }
 
 /**
- * Connect native account operations to the standard authenticated Web backend.
+ * Connect native account operations to the AI Route account over the standard authenticated Web backend.
  * @param origin - Host Web origin.
  * @param invoke - validated unary RPC caller.
  * @param cookies - Electron session cookie reader.
@@ -85,18 +113,18 @@ export interface DesktopAccountBackend {
  */
 export function desktopAccountBackend(origin: string, invoke: AccountInvoke, cookies: () => Promise<string>): DesktopAccountBackend {
   const call = async (method: string, args: Record<string, unknown> = {}): Promise<AccountView> =>
-    accountView(await invoke({ namespace: 'account', method, args }))
+    accountView(fromAiRoute(await invoke({ namespace: 'aiRoute', method, args })))
   return {
     state: () => call('getState'),
-    start: client => call('startSignIn', { client, callbackOrigin: new URL(origin).origin, loginSource: 'desktop' }),
-    cancel: attemptId => call('cancelSignIn', { attemptId }), signOut: client => call('signOut', { client }),
+    start: () => call('startSignIn', { callbackOrigin: new URL(origin).origin }),
+    cancel: () => call('cancelSignIn'), signOut: () => call('signOut'),
     watch(listener, failed, expired, onAnalyticsEnabledChanged) {
       let closed = false
       let socket: WebSocket | undefined
       let retry: ReturnType<typeof setTimeout> | undefined
+      let lastStatus: AccountView['status'] | undefined
       const connect = (): void => {
         const streamId = randomUUID()
-        const expiryStreamId = randomUUID()
         const analyticsPolicyStreamId = randomUUID()
         void cookies().then((cookie) => {
           if (closed) return
@@ -105,8 +133,7 @@ export function desktopAccountBackend(origin: string, invoke: AccountInvoke, coo
           socket = new WebSocket(url, { headers: { cookie, origin }, maxPayload: 65_536 })
           socket.on('open', () => {
             if (onAnalyticsEnabledChanged !== undefined) socket?.send(JSON.stringify({ type: 'open', streamId: analyticsPolicyStreamId, endpoint: 'productAnalytics/watchPolicy', payload: { args: {} } }))
-            socket?.send(JSON.stringify({ type: 'open', streamId: expiryStreamId, endpoint: 'account/watchExpiry', payload: { args: {} } }))
-            socket?.send(JSON.stringify({ type: 'open', streamId, endpoint: 'account/watch', payload: { args: {} } }))
+            socket?.send(JSON.stringify({ type: 'open', streamId, endpoint: 'aiRoute/watch', payload: { args: {} } }))
           })
           socket.on('message', (data) => {
             try {
@@ -117,10 +144,14 @@ export function desktopAccountBackend(origin: string, invoke: AccountInvoke, coo
                 else onAnalyticsEnabledChanged?.(false)
                 return
               }
-              if (frame.streamId === expiryStreamId && frame.type === 'item' && frame.value === 'session-expired') { expired(); return }
               if (frame.streamId !== streamId) throw new Error('desktop account: unexpected stream')
-              if (frame.type === 'item') listener(accountView(frame.value))
-              else socket?.close()
+              if (frame.type === 'item') {
+                const state = accountView(fromAiRoute(frame.value))
+                // AI Route has no separate expiry stream: a stored grant that vanishes outside an attempt is an expiry.
+                if (lastStatus === 'credential-stored' && state.status === 'signed-out' && state.attempt === null) expired()
+                lastStatus = state.status
+                listener(state)
+              } else socket?.close()
             } catch { socket?.close() }
           })
           socket.on('error', () => { socket?.close() })

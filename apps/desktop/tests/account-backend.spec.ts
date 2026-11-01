@@ -23,18 +23,18 @@ it('accepts a no-response login failure without discarding the account projectio
   expect(accountView(state)).toEqual(state)
 })
 
-it('uses account Remote commands without returning additional wire fields', async () => {
+it('uses AI Route Remote commands without returning additional wire fields', async () => {
   const requests: unknown[] = []
   const backend = desktopAccountBackend('http://127.0.0.1:1234', (request) => {
     requests.push(request)
-    return Promise.resolve({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null, token: 'private' })
+    return Promise.resolve({ status: 'signed-out', username: null, dashboardUrl: 'https://aiapi.hoj.kr', attempt: null, token: 'private' })
   }, () => Promise.resolve(''))
   const client = { version: '1.2.3', locale: 'en', timezoneOffsetSeconds: 28_800 }
-  expect(await backend.start(client)).toEqual({ links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null })
+  expect(await backend.start(client)).toEqual({ links: { usageUrl: 'https://aiapi.hoj.kr', topUpUrl: 'https://aiapi.hoj.kr' }, status: 'signed-out', attempt: null })
   expect(await backend.signOut(client)).toMatchObject({ status: 'signed-out' })
   expect(requests).toEqual([
-    { namespace: 'account', method: 'startSignIn', args: { client, callbackOrigin: 'http://127.0.0.1:1234', loginSource: 'desktop' } },
-    { namespace: 'account', method: 'signOut', args: { client } },
+    { namespace: 'aiRoute', method: 'startSignIn', args: { callbackOrigin: 'http://127.0.0.1:1234' } },
+    { namespace: 'aiRoute', method: 'signOut', args: {} },
   ])
 })
 
@@ -44,7 +44,7 @@ it('does not replay an expiry reason from an account snapshot', () => {
   expect(accountView({ ...state, signOutReason: 'expired' })).toEqual(state)
 })
 
-it('receives live expiry separately from account snapshots', async () => {
+it('derives expiry from a stored account that disappears outside an attempt', async () => {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   await once(server, 'listening')
   onTestFinished(async () => {
@@ -56,12 +56,14 @@ it('receives live expiry separately from account snapshots', async () => {
   const connected = once(server, 'connection')
   const expired = vi.fn()
   const onAnalyticsEnabledChanged = vi.fn()
-  const snapshot = { status: 'signed-out', attempt: null,
-    links: { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top_up' } }
+  const snapshot = { status: 'signed-out', username: null, dashboardUrl: 'https://aiapi.hoj.kr', attempt: null }
+  const projected = { status: 'signed-out', attempt: null, links: { usageUrl: 'https://aiapi.hoj.kr', topUpUrl: 'https://aiapi.hoj.kr' } }
   const received = Promise.withResolvers<undefined>()
+  const seen: unknown[] = []
   const backend = desktopAccountBackend(`http://127.0.0.1:${address.port}`, () => Promise.resolve(snapshot), () => Promise.resolve(''))
   const stop = backend.watch(
-    (value) => { expect(value).toEqual(snapshot); received.resolve(undefined) }, vi.fn(), expired, onAnalyticsEnabledChanged,
+    (value) => { seen.push(value); if (seen.length === 1) { expect(value).toEqual(projected); received.resolve(undefined) } },
+    vi.fn(), expired, onAnalyticsEnabledChanged,
   )
   onTestFinished(stop)
   await connected
@@ -73,10 +75,10 @@ it('receives live expiry separately from account snapshots', async () => {
     if (!Buffer.isBuffer(data)) throw new Error('expected a Buffer WebSocket frame')
     const frame = JSON.parse(data.toString('utf8')) as { endpoint: string; streamId: string }
     streams.set(frame.endpoint, frame.streamId)
-    if (streams.size === 3) opened.resolve(undefined)
+    if (streams.size === 2) opened.resolve(undefined)
   })
   await opened.promise
-  socket.send(JSON.stringify({ type: 'item', streamId: streams.get('account/watch'), value: snapshot }))
+  socket.send(JSON.stringify({ type: 'item', streamId: streams.get('aiRoute/watch'), value: snapshot }))
   await received.promise
   socket.send(JSON.stringify({ type: 'item', streamId: streams.get('productAnalytics/watchPolicy'), value: true }))
   await vi.waitFor(() => { expect(onAnalyticsEnabledChanged).toHaveBeenLastCalledWith(true) })
@@ -87,7 +89,11 @@ it('receives live expiry separately from account snapshots', async () => {
   socket.send(JSON.stringify({ type: 'item', streamId: streams.get('productAnalytics/watchPolicy'), value: 'invalid policy' }))
   await vi.waitFor(() => { expect(onAnalyticsEnabledChanged).toHaveBeenLastCalledWith(false) })
   expect(expired).not.toHaveBeenCalled()
-  socket.send(JSON.stringify({ type: 'item', streamId: streams.get('account/watchExpiry'), value: 'session-expired' }))
+  const signedIn = { status: 'signed-in', username: 'user', dashboardUrl: 'https://aiapi.hoj.kr', attempt: null }
+  socket.send(JSON.stringify({ type: 'item', streamId: streams.get('aiRoute/watch'), value: signedIn }))
+  await vi.waitFor(() => { expect(seen).toHaveLength(2) })
+  expect(expired).not.toHaveBeenCalled()
+  socket.send(JSON.stringify({ type: 'item', streamId: streams.get('aiRoute/watch'), value: { ...signedIn, status: 'signed-out', username: null } }))
   await vi.waitFor(() => { expect(expired).toHaveBeenCalledOnce() })
   stop()
 })

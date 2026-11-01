@@ -133,5 +133,10 @@ export function apply(ctx: Context, config: Config): void {
     },
   })
   ctx.llm.registerAdapter([PROVIDER], adapter)
+  // Listed in the configurable-provider directory so first-run onboarding counts the route as a usable provider
+  // (it authenticates through the account, so no credential reference is declared).
+  ctx.llm.registerConfigurableProviders([{
+    provider: PROVIDER, displayName: 'AI Route', settingsNs: ctx.fiber.entry?.options.id ?? name, settingsPath: [], declared: true,
+  }])
   void ensure()
 }
