@@ -221,6 +221,23 @@ export function defineCoverageCases(group: CoverageGroup): void {
       expect(JSON.stringify(adapter.requests[1]!.messages)).toContain('continue please')
     })
 
+    it('reports stop_hook_active while a Stop block continues the turn', async () => {
+      const d = dir()
+      const log = join(d, 'active')
+      const s = sh(d, 'stop.sh', `#!/usr/bin/env bash\npayload=$(cat)\nif echo "$payload" | grep -q '"stop_hook_active":true'; then echo true >> "${log}"; exit 0; fi\necho false >> "${log}"\necho "keep going" >&2\nexit 2\n`)
+      const path = hooks(d, { Stop: [{ hooks: [{ type: 'command', command: s }] }] })
+      const adapter = new MockAdapter([textResponse('one'), textResponse('two'), textResponse('three'), textResponse('four')])
+      const ctx = await harness(path, adapter)
+      const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+      await waitForIdle(ctx, agent)
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'again' }], source: { kind: 'user' } }))
+      await waitForIdle(ctx, agent)
+      // Each turn blocks once with the flag cleared, then stops once the flag is set.
+      expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(['false', 'true', 'false', 'true'])
+      expect(adapter.requests).toHaveLength(4)
+    }, 15_000) // Real agent and hook subprocess startup can exceed Vitest's default under coverage concurrency.
+
     it('a Stop hook that blocks with EMPTY stderr still forces continuation (no reason required)', async () => {
     // A blocking Stop hook with no stderr yields `deny` without a reason. The block still forces
     // continuation; the script self-limits to one block to avoid a loop.

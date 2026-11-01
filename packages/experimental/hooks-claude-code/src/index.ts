@@ -270,13 +270,17 @@ export function apply(ctx: Context, config: Config): void {
   })
 
   // A blocking Stop hook steers at the stopping boundary, which makes the
-  // machine observe pending input and run another step.
+  // machine observe pending input and run another step. The turn each agent
+  // last continued this way drives Claude Code's `stop_hook_active` loop guard.
   // TODO(stop-loop-guard): cap consecutive forced continuations; hooks must self-limit meanwhile.
+  const stopContinuedTurn = new WeakMap<Agent, number>()
   ctx.on('agent/turn-stopping', async ({ agent, turn, signal }): Promise<void> => {
-    const merged = await runPoint('Stop', '', stopPayload(agent), { agent, turn, signal })
+    const active = stopContinuedTurn.get(agent) === turn
+    const merged = await runPoint('Stop', '', stopPayload(agent, active), { agent, turn, signal })
     if (merged.decision === 'deny') {
       // A blocking Stop hook forces continuation.
       const text = merged.reason ?? 'continue: blocked by Stop hook'
+      stopContinuedTurn.set(agent, turn)
       agent.steer(createUserMessage({ content: [{ type: 'text', text }], source: CONTEXT_SOURCE }))
     }
   })
@@ -346,8 +350,8 @@ function preToolPayload(exec: ToolExecution): Record<string, unknown> {
 function postToolPayload(exec: ToolExecution, result: ToolExecutionResult): Record<string, unknown> {
   return { ...base(exec.agent, 'PostToolUse'), tool_name: exec.name, tool_input: exec.arguments, tool_use_id: exec.callId, tool_response: blocksToText(result.content) }
 }
-function stopPayload(agent: Agent): Record<string, unknown> {
-  return { ...base(agent, 'Stop'), stop_hook_active: false }
+function stopPayload(agent: Agent, stopHookActive: boolean): Record<string, unknown> {
+  return { ...base(agent, 'Stop'), stop_hook_active: stopHookActive }
 }
 /**
  * Build a SubagentStart/SubagentStop payload from the CC base (the child's
