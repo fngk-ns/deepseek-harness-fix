@@ -127,7 +127,7 @@ export class LspConnection {
     // Child stdin can fail while the process itself remains alive (for example, a server closes fd
     // 0). Treat that as a fatal connection error so pending requests reject immediately instead of
     // waiting for a process-close event that may never arrive.
-    this.stdin.on('error', (error) => { this.fail(error) })
+    this.stdin.on('error', (error) => { this.failTransport(error) })
     this.handle.stdout.on('data', (chunk: Buffer) => { this.onStdout(chunk) })
   }
 
@@ -225,8 +225,7 @@ export class LspConnection {
     } catch (error) {
       // A framing/JSON failure corrupts the stream position irrecoverably: fail the instance and
       // terminate the managed range so helper processes do not outlive the leader.
-      this.fail(asError(error))
-      this.handle.terminate()
+      this.failTransport(asError(error))
       return
     }
     for (const message of messages) this.dispatch(message)
@@ -281,7 +280,7 @@ export class LspConnection {
           resolve()
           return
         }
-        this.fail(error)
+        this.failTransport(error)
         reject(error)
       }
       try {
@@ -301,6 +300,15 @@ export class LspConnection {
   private exitMessage(): string {
     const tail = this.stderrTail.trim()
     return tail === '' ? 'language server exited' : `language server exited; stderr: ${tail}`
+  }
+
+  /**
+   * Fail the connection for an unusable protocol stream and terminate the managed range, because
+   * a server that can no longer exchange messages would otherwise run until the next query.
+   */
+  private failTransport(error: Error): void {
+    this.fail(error)
+    this.handle.terminate()
   }
 
   private fail(error: Error): void {

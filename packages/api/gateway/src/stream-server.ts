@@ -59,6 +59,8 @@ export class RemoteStreamMuxServer {
   private readonly compression: boolean
   private readonly connections = new Set<Promise<void>>()
   private readonly missedHeartbeats = new WeakMap<WebSocket, number>()
+  /** Sockets a heartbeat tick already found in the closing handshake. */
+  private readonly closingAtHeartbeat = new WeakSet<WebSocket>()
   private heartbeatTimer: NodeJS.Timeout | undefined
 
   /**
@@ -132,6 +134,13 @@ export class RemoteStreamMuxServer {
     if (this.heartbeatTimer !== undefined) return
     this.heartbeatTimer = setInterval(() => {
       for (const socket of this.server.clients) {
+        if (socket.readyState === WebSocket.CLOSING) {
+          // An unresponsive peer would otherwise hold a closing socket for the
+          // library's close timeout; one full heartbeat interval is the bound.
+          if (this.closingAtHeartbeat.has(socket)) socket.terminate()
+          else this.closingAtHeartbeat.add(socket)
+          continue
+        }
         if (socket.readyState !== WebSocket.OPEN) continue
         const missed = this.missedHeartbeats.get(socket) as number
         if (missed >= MAX_MISSED_HEARTBEATS) {

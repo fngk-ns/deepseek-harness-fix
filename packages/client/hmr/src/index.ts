@@ -30,10 +30,16 @@ export const inject = ['clientModules', 'webServer']
 export interface Config {
   /** Bundle stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
   pollIntervalMs?: number
+  /**
+   * Interval in milliseconds between SSE keep-alive comments on `/plugins/events` (default 15000).
+   * A write to a vanished client fails and releases its connection instead of waiting for the next rebuild.
+   */
+  keepAliveIntervalMs?: number
 }
 
 export const Config: z<Config> = z.object({
   pollIntervalMs: z.number().step(1).min(1).default(500),
+  keepAliveIntervalMs: z.number().step(1).min(1).default(15_000),
 })
 
 /** Serialize one frame as an SSE data line. */
@@ -68,6 +74,7 @@ function sameBundleStat(left: WatchedBundleStat, right: WatchedBundleStat): bool
 export function apply(ctx: Context, config: Config): void {
   // schemastery's .default() guarantees the field is set after validation.
   const pollIntervalMs = config.pollIntervalMs as number
+  const keepAliveIntervalMs = config.keepAliveIntervalMs as number
 
   // --- bundle watch: one HMR-owned stat poll ------------------------------
   const watched = new Map<string, WatchedBundle>()
@@ -176,6 +183,14 @@ export function apply(ctx: Context, config: Config): void {
     res.write(sseData({ type: 'graph', graph: ctx.clientModules.graph() }))
     res.on('close', () => { connections.delete(res) })
   }
+
+  ctx.effect(() => {
+    const timer = setInterval(() => {
+      for (const res of connections) res.write(': keep-alive\n\n')
+    }, keepAliveIntervalMs)
+    timer.unref()
+    return () => { clearInterval(timer) }
+  }, 'client-hmr: SSE keep-alive')
 
   ctx.effect(() => {
     const disposeRoute = ctx.webServer.register({

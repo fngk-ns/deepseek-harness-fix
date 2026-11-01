@@ -40,6 +40,7 @@ Each successful reload re-executes the plugin bundle and remounts the plugin wit
 | Field | Default | Meaning |
 |---|---|---|
 | `pollIntervalMs` | `500` | Bundle stat-poll interval in milliseconds |
+| `keepAliveIntervalMs` | `15000` | Interval in milliseconds between keep-alive comments on the event stream, so a vanished browser's connection is released |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-client-hmr) is the exhaustive source for every accepted field and its JSDoc.
 

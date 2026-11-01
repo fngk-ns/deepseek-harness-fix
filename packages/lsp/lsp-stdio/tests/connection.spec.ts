@@ -236,6 +236,8 @@ describe('LspConnection edge behavior', () => {
     }
     const conn = connectScript('setInterval(()=>{}, 1000)', 100_000, writer)
     await expect(conn.request('initialize', {})).rejects.toThrow(/fixture stdin failure/)
+    // The unusable server is terminated rather than left running until the next query.
+    await conn.closed
   })
 
   it('ignores a frame that is neither a valid request nor a numeric-id response', async () => {

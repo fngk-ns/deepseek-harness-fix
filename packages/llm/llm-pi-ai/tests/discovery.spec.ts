@@ -391,6 +391,18 @@ describe('draft-provider model discovery', () => {
     },
   )
 
+  it('releases the response body of a rejected listing', async () => {
+    const ctx = await harness()
+    const cancelled = vi.fn()
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+      cancel: cancelled,
+    }), { status: 401 })))
+
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: 'https://refused.example/v1', apiKey: 'wrong' }))
+      .rejects.toThrow(/answered 401; check the API key/)
+    expect(cancelled).toHaveBeenCalledTimes(1)
+  })
+
   it('reports cancellation during the body read as an abort, not a raw reason', async () => {
     const ctx = await harness()
     const controller = new AbortController()

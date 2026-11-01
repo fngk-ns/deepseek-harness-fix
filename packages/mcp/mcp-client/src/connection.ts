@@ -15,7 +15,7 @@
  * @module
  */
 
-import { Client, type Transport } from '@modelcontextprotocol/client'
+import { Client, StreamableHTTPClientTransport, type Transport } from '@modelcontextprotocol/client'
 import type { Context } from '@deepseek-ai/cordis'
 import { assertNever, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ServerContext } from './server-context.ts'
@@ -196,7 +196,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     generationDown(generation)
   }
 
-  /** Wait for the transport-owned close signal without letting a broken transport wedge teardown forever. */
+  /** Wait for a teardown signal, such as transport closure, without letting a broken transport wedge teardown forever. */
   function waitForClose(closed: Promise<void>): Promise<boolean> {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => { resolve(false) }, GENERATION_CLOSE_TIMEOUT_MS)
@@ -286,6 +286,11 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     /** Unattached probes close through their transport; attached clients must also report transport closure. */
     async function closeGeneration(): Promise<boolean> {
       const attached = generation.transport !== undefined
+      if (attached && transport instanceof StreamableHTTPClientTransport) {
+        // MCP asks HTTP clients to end their server session with DELETE; otherwise it
+        // lingers until the server's idle expiry. close() aborts a DELETE the bound abandons.
+        await waitForClose(transport.terminateSession().catch((_terminateError: unknown) => undefined))
+      }
       try {
         await (attached ? generation.close() : transport?.close())
       } catch (_error) {

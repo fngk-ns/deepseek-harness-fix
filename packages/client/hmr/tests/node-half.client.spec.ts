@@ -337,3 +337,27 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
     await ctx.fiber.dispose()
   }
 })
+
+it('writes keep-alive comments to open event streams until disposal', async () => {
+  const ctx = new Context()
+  const routes: WebRoute[] = []
+  ctx.provide('clientModules', fakeClientModuleHost(new Map()))
+  ctx.provide('webServer', fakeHttpServer(routes))
+  const fiber = ctx.plugin({ inject: [...inject], Config, apply }, { pollIntervalMs: POLL_MS, keepAliveIntervalMs: 10 })
+  await fiber.await()
+  const lines: string[] = []
+  const response = Object.assign(new EventEmitter(), {
+    writeHead: vi.fn(), write: (line: string) => { lines.push(line) },
+    destroy: vi.fn(), end: vi.fn(),
+  })
+  try {
+    await routes[0]!.handler({ method: 'GET' } as IncomingMessage, response as unknown as ServerResponse)
+    await vi.waitFor(() => { expect(lines).toContain(': keep-alive\n\n') })
+    await fiber.dispose()
+    const written = lines.length
+    await new Promise<void>((resolve) => { setTimeout(resolve, 30) })
+    expect(lines).toHaveLength(written)
+  } finally {
+    await fiber.dispose()
+  }
+})

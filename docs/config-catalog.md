@@ -510,6 +510,11 @@ export interface ConnectionRecoveryConfig {
 export interface Config {
   /** Bundle stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
   pollIntervalMs?: number
+  /**
+   * Interval in milliseconds between SSE keep-alive comments on `/plugins/events` (default 15000).
+   * A write to a vanished client fails and releases its connection instead of waiting for the next rebuild.
+   */
+  keepAliveIntervalMs?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-hmr -->

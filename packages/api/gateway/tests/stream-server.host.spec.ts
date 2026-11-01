@@ -52,6 +52,20 @@ describe('Remote stream mux server carrier lifecycle', () => {
     await closed
   })
 
+  it('terminates a socket whose peer leaves the closing handshake unanswered', async () => {
+    const entry = await startMux(async (_endpoint, _payload, _uplink, _peer, control) => waitForAbort(control.signal), 20)
+    const client = await connect(entry.url)
+    const serverSocket = acceptedSocket(entry.mux)
+    const terminated = vi.spyOn(serverSocket, 'terminate')
+    client.pause()
+    serverSocket.close(1001, 'peer left')
+    expect(serverSocket.readyState).toBe(WebSocket.CLOSING)
+
+    await vi.waitFor(() => { expect(terminated).toHaveBeenCalledOnce() })
+    expect(serverSocket.readyState).toBe(WebSocket.CLOSED)
+    client.resume()
+  })
+
   it('requires two missed heartbeats before terminating an unresponsive socket', async () => {
     const entry = await startMux(async (_endpoint, _payload, _uplink, _peer, control) => waitForAbort(control.signal), 20)
     const client = await connect(entry.url)
