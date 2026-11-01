@@ -13,7 +13,7 @@ import {
   resolveTargetPolicy,
 } from '@deepseek-ai/dsh-compaction-basic/src/config.ts'
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
-import LlmRuntime, { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter , createMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter , createMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
@@ -984,7 +984,7 @@ describe('optional model-free tool-result pruning', () => {
     expect(session.surface.replaceGeneration).toBe(1)
   })
 
-  it('summarizes the pruned surface when pruning is insufficient', async () => {
+  it('summarizes the routed unpruned results when pruning is insufficient', async () => {
     const ctx = createContext(2_000)
     void new ToolResultPruner(ctx, pruneConfig)
     const compact = new TestCompactionEngine(ctx, {
@@ -995,11 +995,15 @@ describe('optional model-free tool-result pruning', () => {
       retainTokens: 50,
     })
     const session = toolConversation()
+    const routed = session.deriveMessages()
 
     expect(await compactIfNeeded(compact, session)).not.toBeNull()
     expect(compact.calls).toHaveLength(1)
-    expect(summarizedText(compact.calls[0]!.input)).toContain('tool result middle pruned')
-    expect(summarizedText(compact.calls[0]!.input)).not.toContain('result 1 '.repeat(300))
+    const input = compact.calls[0]!.input
+    expect(summarizedText(input)).not.toContain('tool result middle pruned')
+    expect(summarizedText(input)).toContain('result 1 '.repeat(300))
+    // The replayed region is a verbatim prefix of the last routed request.
+    expect(input.messages).toEqual(routed.slice(0, input.messages.length))
   })
 
   it('retains the original compaction-basic behavior without the optional plugin', async () => {
@@ -1326,6 +1330,11 @@ describe('compaction region transaction', () => {
 class ScriptedAdapter extends LlmAdapter {
   lastOptions: GenerateOptions | undefined
   usage: TokenUsage | undefined
+  reasoning: LlmResolvedModelInfo['reasoning']
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return Promise.resolve({ provider, id: model, name: model, ...this.reasoning === undefined ? {} : { reasoning: this.reasoning } })
+  }
 
   constructor(
     private readonly blocks: readonly ContentBlock[],
@@ -1409,6 +1418,25 @@ describe('default one-shot summarizer', () => {
     expect(Object.isFrozen(instruction?.content[0])).toBe(true)
     expect(result.shadowedSeqs).toEqual(nodes.slice(start, start + 2))
     if (system !== undefined) expect(session.surface.nodes[0]).toBe(nodes[0])
+  })
+
+  it('replays the routed reasoning and sampling controls only for the routed model', async () => {
+    const { adapter, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }])
+    const session = conversation(3)
+    session.append('request/header', {
+      header: { config: { provider: MODEL, model: MODEL, reasoningEffort: ReasoningEffortId('off'), temperature: 0.2, maxTokens: 99 } },
+      reason: 'resume',
+    })
+    adapter.reasoning = { efforts: [{ id: ReasoningEffortId('off'), name: 'off' }] }
+    await compact.runSummarize(promptInput('transcript'), agent(session, MODEL), SIGNAL)
+    expect(adapter.lastOptions).toMatchObject({ reasoningEffort: 'off', temperature: 0.2 })
+
+    const configured = await summarizerHarness([{ type: 'text', text: 'summary' }], undefined, 'other', {
+      auto: false, summarizationProvider: 'other', summarizationModel: 'other',
+    })
+    await configured.compact.runSummarize(promptInput('transcript'), agent(session, MODEL), SIGNAL)
+    expect(configured.adapter.lastOptions).not.toHaveProperty('reasoningEffort')
+    expect(configured.adapter.lastOptions).not.toHaveProperty('temperature')
   })
 
   it('requires complete raw output when a subclass marks one local LLM stream call', () => {

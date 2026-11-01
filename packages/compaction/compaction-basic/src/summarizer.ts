@@ -141,6 +141,15 @@ export async function summarizeWithLlm(
     )
   }
 
+  // Reasoning and sampling controls select the provider's prompt rendering, so the
+  // replayed prefix only reuses the warm cache when they match the routed request.
+  const routedControls = latest !== undefined && latest.provider === target.provider && latest.model === target.model
+    ? {
+      ...latest.reasoningEffort === undefined ? {} : { reasoningEffort: latest.reasoningEffort },
+      ...latest.temperature === undefined ? {} : { temperature: latest.temperature },
+    }
+    : {}
+
   const assembler = new BlockAssembler()
   const messages: RequestMessage[] = [
     ...input.messages,
@@ -152,6 +161,7 @@ export async function summarizeWithLlm(
   const options: GenerateOptions = {
     provider: target.provider,
     model: target.model,
+    ...routedControls,
     messages,
     toolHistory: agent.session.toolHistory(),
     ...input.tools === undefined ? {} : { tools: [...input.tools] },

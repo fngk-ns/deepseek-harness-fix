@@ -413,8 +413,10 @@ function toolDeclarations(
 
 /**
  * Construct provider declarations from session-folded history without changing logged active tools.
- * Unsupported routes and incomplete history use current declarations without developer updates.
+ * Unsupported routes and missing history use current declarations without developer updates.
  * Explicitly deferred baseline tools become available only after their first retained addition.
+ * An auxiliary call over a log prefix receives the same declaration list as the full request, so the
+ * provider prefix cache matches; additions after that prefix stay deferred and unactivated within it.
  * @param messages - complete request inputs, or the prefix selected for an auxiliary call.
  * @param tools - currently active tool schemas.
  * @param toolUpdate - the resolved route's update mode.
@@ -438,11 +440,6 @@ export function projectToolUpdates(
 
   if (history === undefined) {
     // Current schemas alone cannot resolve definitions referenced by past updates.
-    return { messages: withoutDeveloperMessages(messages), tools }
-  }
-  const messageIds = new Set(messages.flatMap(message => message.role === 'developer' ? [message.id] : []))
-  if (history.updates.some(update => !messageIds.has(update.messageId))) {
-    // An auxiliary prefix may omit updates needed to activate historical declarations.
     return { messages: withoutDeveloperMessages(messages), tools }
   }
 

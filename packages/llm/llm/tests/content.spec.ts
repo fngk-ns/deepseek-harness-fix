@@ -451,15 +451,23 @@ describe('projectToolUpdates', () => {
       : [prompt, added])
   })
 
-  it('uses current declarations without updates when history is missing or the prefix omits an update', () => {
+  it('uses current declarations without updates when history is missing', () => {
     const added = developer([{ type: 'tool-addition', toolName: 'fetch' }])
-    const history: ToolHistory = { tools: [search], updates: [{ messageId: added.id, additions: [fetch] }] }
     const tools = [search, fetch]
     const missing = projectToolUpdates([prompt, added], tools, 'in-history')
     expect(missing.tools).toBe(tools)
     expect(missing.messages).toEqual([prompt])
-    const prefix = projectToolUpdates([prompt], tools, 'in-history', history)
-    expect(prefix.tools).toBe(tools)
+  })
+
+  it.each(['addition-only', 'in-history'] as const)('declares the full request tools for a prefix that omits a later update on %s routes', (mode) => {
+    const zeta: ToolSchema = { name: 'zeta', description: 'Zeta', parameters: {} }
+    const added = developer([{ type: 'tool-addition', toolName: 'fetch' }])
+    const history: ToolHistory = { tools: [zeta, search], updates: [{ messageId: added.id, additions: [fetch] }] }
+    const active = [fetch, search, zeta]
+    const full = projectToolUpdates([prompt, added, prompt], active, mode, history)
+    const prefix = projectToolUpdates([prompt], active, mode, history)
+    expect(full.tools).toEqual([zeta, search, { ...fetch, deferLoading: true }])
+    expect(prefix.tools).toEqual(full.tools)
     expect(prefix.messages).toEqual([prompt])
   })
 

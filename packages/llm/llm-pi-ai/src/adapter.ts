@@ -411,11 +411,13 @@ export class PiAiAdapter extends LlmAdapter {
     const model = this.modelOf(snapshot, options.provider, options.model)
     const updates = conversationUpdates(model)
     // pi-ai collapses Anthropic tool updates without an initially active declaration.
+    // A declared all-deferred list carries the placeholder from its first request, so
+    // the first tool addition leaves the cached tool prefix unchanged.
     const tools = options.tools ?? []
     const needsPlaceholder = model.api === 'anthropic-messages' && updates.toolUpdate === 'in-history'
       && tools.every(tool => tool.deferLoading === true)
-      && options.messages.some(message => message.role === 'developer'
-        && message.content.some(block => block.type === 'tool-addition' || block.type === 'tool-removal'))
+      && (tools.length > 0 || options.messages.some(message => message.role === 'developer'
+        && message.content.some(block => block.type === 'tool-addition' || block.type === 'tool-removal')))
     const request = needsPlaceholder
       ? { ...options, tools: [ANTHROPIC_TOOL_UPDATE_PLACEHOLDER, ...tools] }
       : options

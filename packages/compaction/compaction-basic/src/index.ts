@@ -342,9 +342,14 @@ export class BasicCompactionEngine extends CompactionEngine {
     if (measurement.totalTokens < spec.thresholdTokens) return null
 
     // Once pressure qualifies, land the model-free pass before choosing a
-    // summary range, then remeasure through the singleton replay fold.
+    // summary range, then remeasure through the singleton replay fold. The last
+    // routed request carried the unpruned results, so summarization replays
+    // them and keeps that request's prefix-cache match.
+    const replayOriginals = new Map<SessionSeq, SessionSeq>()
     if (prune !== undefined) {
-      prune.pruneSession(agent.session)
+      for (const entry of prune.pruneSession(agent.session).pruned) {
+        replayOriginals.set(entry.replacementSeq, entry.originalSeq)
+      }
       measurement = meter.measure(agent.session, header)
     }
     if (measurement.totalTokens < spec.thresholdTokens) return null
@@ -359,7 +364,7 @@ export class BasicCompactionEngine extends CompactionEngine {
           + `(${measurement.totalTokens} estimated tokens >= threshold ${spec.thresholdTokens})`,
         )
       }
-      result = await this.compactRegion(range.start, range.end, agent, signal)
+      result = await this.compactRegion(range.start, range.end, agent, signal, replayOriginals)
       measurement = meter.measure(agent.session, header)
       if (measurement.totalTokens < spec.thresholdTokens) return result
     }
@@ -377,6 +382,8 @@ export class BasicCompactionEngine extends CompactionEngine {
    * @param end - inclusive last surface-node seq.
    * @param agent - owner of the target session, used by the summarizer.
    * @param signal - optional summarization cancellation signal.
+   * @param replayOriginals - replacement seqs landed after the last routed request, mapped to the
+   *   source events that request carried; summarization replays those sources.
    * @returns the successful durable compaction result.
    */
   override async compactRegion(
@@ -384,6 +391,7 @@ export class BasicCompactionEngine extends CompactionEngine {
     end: SessionSeq,
     agent: Agent,
     signal?: AbortSignal,
+    replayOriginals?: ReadonlyMap<SessionSeq, SessionSeq>,
   ): Promise<CompactionResult> {
     return compactSurfaceRegion(
       this.regionDependencies(),
@@ -391,7 +399,11 @@ export class BasicCompactionEngine extends CompactionEngine {
       start,
       end,
       agent,
-      { owner: 'current-turn', stability: 'whole-surface' },
+      {
+        owner: 'current-turn',
+        stability: 'whole-surface',
+        ...replayOriginals === undefined ? {} : { replayOriginals },
+      },
       signal,
     )
   }

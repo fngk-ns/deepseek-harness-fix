@@ -188,6 +188,17 @@ describe('serialized conversation updates', () => {
     ])
   })
 
+  it('declares the Anthropic placeholder before the first update of an all-deferred tool list', async () => {
+    const deferred = { ...added, deferLoading: true as const }
+    const { requests } = await send('anthropic', 'claude-opus-4-8', {
+      messages: [user('first')], tools: [deferred],
+      toolHistory: { tools: [deferred], updates: [] },
+    })
+    expect(requests).toHaveLength(1)
+    const tools = (requests[0] as { tools: { name?: string }[] }).tools
+    expect(tools[0]?.name).toBe('DeferredToolPlaceholder')
+  })
+
   it.each([
     { provider: 'moonshotai', modelId: 'kimi-k3', field: 'messages', role: 'system' },
     { provider: 'openai', modelId: 'gpt-5.4', field: 'input', role: 'developer' },
@@ -306,15 +317,19 @@ describe('historical tool availability on the wire', () => {
     expect(JSON.stringify(requests[0])).not.toContain('Read a file')
   })
 
-  it('uses current declarations when a request prefix omits recorded updates', async () => {
+  it('declares the full request tools when a request prefix omits recorded updates', async () => {
     const update = addition()
     const { requests } = await send('anthropic', 'claude-opus-4-8', {
       messages: [user('prefix')], tools: [added],
       toolHistory: { tools: [baseline], updates: [{ messageId: update.id, additions: [added] }] },
     })
+    const full = await send('anthropic', 'claude-opus-4-8', {
+      messages: [user('prefix'), update, user('next')], tools: [added],
+      toolHistory: { tools: [baseline], updates: [{ messageId: update.id, additions: [added] }] },
+    })
     expect(requests).toHaveLength(1)
-    expect(requests[0]).toHaveProperty('tools', expect.arrayContaining([expect.objectContaining({ name: 'search' })]))
     expect(JSON.stringify(requests[0])).not.toContain('tool_addition')
-    expect(JSON.stringify(requests[0])).not.toContain('Read a file')
+    expect(JSON.stringify(full.requests[0])).toContain('tool_addition')
+    expect((requests[0] as { tools: unknown }).tools).toEqual((full.requests[0] as { tools: unknown }).tools)
   })
 })
