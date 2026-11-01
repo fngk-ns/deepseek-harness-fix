@@ -1499,6 +1499,37 @@ describe('agent loop', () => {
     expect(reasons).toEqual([{ kind: 'max-tokens' }])
   })
 
+  it('sends tool results owed after a max-tokens step before ending the turn as max-tokens', async () => {
+    const adapter = new MockAdapter([
+      maxTokensResponse('first half'),
+      toolCallResponse('c1', 'echo', { text: 'x' }),
+      textResponse('done'),
+    ])
+    const ctx = await harness(adapter)
+    ctx.tools.register(defineContentToolFixture({
+      name: 'echo',
+      description: '',
+      parameters: { text: { type: 'string' } },
+      execute: () => Promise.resolve([{ type: 'text', text: 'echoed' }]),
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+    let steered = false
+    ctx.on('agent/turn-stopping', ({ agent: subject }) => {
+      if (steered) return
+      steered = true
+      subject.steer(createUserMessage({ content: [{ type: 'text', text: 'continue after truncation' }], source: { kind: 'max-tokens-test' } }))
+    })
+    const reasons: TurnEndReason[] = []
+    ctx.on('session/event', (_s, event) => { if (event.type === 'turn/end') reasons.push(event.data.reason) })
+
+    send(agent, 'go')
+    await waitForIdle(ctx, agent)
+
+    expect(adapter.requests).toHaveLength(3)
+    expect(adapter.requests[2]!.messages.at(-1)).toMatchObject({ role: 'tool', content: [{ type: 'text', text: 'echoed' }] })
+    expect(reasons).toEqual([{ kind: 'max-tokens' }])
+  })
+
   it('a completed step after no max-tokens keeps the turn completed (max-tokens does not leak across turns)', async () => {
     // Two consecutive turns: turn 1 is cut off (max-tokens), turn 2 is a clean
     // stop. The per-turn reason must be independent — turn 2 ends completed.

@@ -339,6 +339,7 @@ export class ReactLoopAgent implements Agent {
     }
     phase.turn = turn
     let turnEnds: TurnEndReason | null = null
+    let maxTokensReached = false
     let target: InboxTarget = 'next-turn'
     try {
       while (true) {
@@ -365,12 +366,12 @@ export class ReactLoopAgent implements Agent {
             if (session === this.session) toolRecovery.observe(event)
           })
           try {
-            // max-tokens is sticky: once any step hits the ceiling, later steps
-            // that complete normally must not downgrade the turn outcome.
+            // `null` means the step's tool results owe another request. Once any
+            // step hits the ceiling, a later completed step still ends the turn
+            // as max-tokens.
             const stepEnd = await this.step(decision)
-            // max-tokens stays sticky: a later completed step must not
-            // downgrade the turn outcome.
-            if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
+            if (stepEnd?.kind === 'max-tokens') maxTokensReached = true
+            turnEnds = stepEnd === null || !maxTokensReached ? stepEnd : { kind: 'max-tokens' }
           } catch (error: unknown) {
             try {
               for (const event of toolRecovery.results()) {
