@@ -67,6 +67,8 @@
     "@deepseek-ai/dsh-llm-deepseek": "workspace:*",
     "@deepseek-ai/dsh-llm-deepseek-api-key": "workspace:*",
     "@deepseek-ai/dsh-llm-deepseek-account": "workspace:*",
+    "@deepseek-ai/dsh-llm-ai-route": "workspace:*",
+    "@deepseek-ai/dsh-ai-route-account": "workspace:*",
     "@deepseek-ai/dsh-llm-pi-ai": "workspace:*",
     "@deepseek-ai/dsh-llm-retry": "workspace:*",
     "@deepseek-ai/dsh-mcp-client": "workspace:*",

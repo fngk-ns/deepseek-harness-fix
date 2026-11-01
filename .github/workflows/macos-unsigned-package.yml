@@ -1,0 +1,110 @@
+name: Package Desktop · macOS · unsigned (hosted)
+
+# Unsigned DMG builds on GitHub-hosted macOS runners: no signing identity, no notarization, no upload.
+# The arm64 job runs on Apple Silicon; the x64 job runs on the Intel image.
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Which architectures to build'
+        type: choice
+        options: [both, arm64, x64]
+        default: both
+        required: true
+  push:
+    branches: [master]
+    paths:
+      - 'packages/credentials/ai-route-account/**'
+      - 'packages/llm/llm-ai-route/**'
+      - 'packages/api/ai-route-controller/**'
+      - 'packages/client/ui-settings-ai-route/**'
+      - '.github/workflows/macos-unsigned-package.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-unsigned-package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  arm64:
+    if: ${{ github.event_name == 'push' || inputs.arch == 'both' || inputs.arch == 'arm64' }}
+    runs-on: macos-latest
+    timeout-minutes: 180
+    env:
+      DSH_DESKTOP_TARGET_PLATFORM: darwin
+      DSH_DESKTOP_TARGET_ARCH: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Check packaging configuration
+        run: pnpm run package:desktop:mac:arm64:unsigned --check
+      - name: Package (unsigned DMG)
+        run: pnpm run package:desktop:mac:arm64:unsigned
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-harness-mac-arm64-unsigned
+          path: apps/desktop/.desktop-build/targets/mac-arm64/unsigned-artifacts/*.dmg
+          include-hidden-files: true
+          compression-level: 0
+          if-no-files-found: error
+      - name: Upload packaging logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaging-logs-mac-arm64
+          path: apps/desktop/.desktop-build/packaging-runs/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  x64:
+    if: ${{ github.event_name == 'push' || inputs.arch == 'both' || inputs.arch == 'x64' }}
+    runs-on: macos-15-intel
+    timeout-minutes: 180
+    env:
+      DSH_DESKTOP_TARGET_PLATFORM: darwin
+      DSH_DESKTOP_TARGET_ARCH: x64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Check packaging configuration
+        run: pnpm run package:desktop:mac:x64:unsigned --check
+      - name: Package (unsigned DMG)
+        run: pnpm run package:desktop:mac:x64:unsigned
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-harness-mac-x64-unsigned
+          path: apps/desktop/.desktop-build/targets/mac-x64/unsigned-artifacts/*.dmg
+          include-hidden-files: true
+          compression-level: 0
+          if-no-files-found: error
+      - name: Upload packaging logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaging-logs-mac-x64
+          path: apps/desktop/.desktop-build/packaging-runs/
+          include-hidden-files: true
+          if-no-files-found: ignore

@@ -143,6 +143,13 @@
     - id: account-controller
       name: '@deepseek-ai/dsh-api-account-controller'
 
+    # AI Route account UI and its Remote namespace.
+    - id: ui-settings-ai-route
+      name: '@deepseek-ai/dsh-client-ui-settings-ai-route'
+
+    - id: ai-route-controller
+      name: '@deepseek-ai/dsh-api-ai-route-controller'
+
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 

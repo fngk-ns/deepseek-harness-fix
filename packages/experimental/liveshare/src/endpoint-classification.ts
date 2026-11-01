@@ -93,6 +93,13 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'account/startSignIn': 'owner-only', // owner account and sign-in; the served page never reads it
   'account/watch': 'owner-only', // owner account and sign-in; the served page never reads it
   'account/watchExpiry': 'owner-only', // owner account and sign-in; the served page never reads it
+  'aiRoute/cancelSignIn': 'owner-only', // owner AI Route account and sign-in; the served page never reads it
+  'aiRoute/getState': 'owner-only', // owner AI Route account and sign-in; the served page never reads it
+  'aiRoute/getUsage': 'owner-only', // owner AI Route account and sign-in; the served page never reads it
+  'aiRoute/listModels': 'owner-only', // owner AI Route account and sign-in; the served page never reads it
+  'aiRoute/signOut': 'owner-only', // owner AI Route account and sign-in; the served page never reads it
+  'aiRoute/startSignIn': 'owner-only', // owner AI Route account and sign-in; the served page never reads it
+  'aiRoute/watch': 'owner-only', // owner AI Route account and sign-in; the served page never reads it
   'job/follow': 'owner-only', // owner background jobs
   'job/kill': 'owner-only', // owner background jobs
   'job/list': 'owner-only', // owner background jobs

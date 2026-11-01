@@ -122,6 +122,10 @@
       config:
         desktopPlatform: !!js "ctx.get('profileContext')?.name === 'desktop' && ['darwin', 'win32'].includes(process.platform) ? process.platform : null"
 
+    # AI Route (aiapi.hoj.kr) account: browser PKCE sign-in, grant in the credential store, usage and model reads.
+    - id: ai-route-account
+      name: '@deepseek-ai/dsh-ai-route-account'
+
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
 
@@ -532,3 +536,7 @@
 
     - id: llm-deepseek-account
       name: '@deepseek-ai/dsh-llm-deepseek-account'
+
+    # AI Route route: the account's plan catalog over the pi-ai OpenAI-compatible transport.
+    - id: llm-ai-route
+      name: '@deepseek-ai/dsh-llm-ai-route'

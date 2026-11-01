@@ -90,6 +90,12 @@
       "path": "../account-controller"
     },
     {
+      "path": "../ai-route-controller"
+    },
+    {
+      "path": "../../credentials/ai-route-account"
+    },
+    {
       "path": "../../credentials/deepseek-account"
     }
   ]
