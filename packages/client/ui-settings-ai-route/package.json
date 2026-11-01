@@ -2,7 +2,9 @@
   "name": "@deepseek-ai/dsh-client-ui-settings-ai-route",
   "description": "AI Route account settings: sign in, allowance usage in credits, and the plan's model list",
   "version": "0.2.2-alpha.2",
-  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fngk-ns/deepseek-harness-fix.git",

@@ -2,7 +2,9 @@
   "name": "@deepseek-ai/dsh-api-ai-route-controller",
   "description": "Expose AI Route account operations over authenticated Remote",
   "version": "0.2.2-alpha.2",
-  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fngk-ns/deepseek-harness-fix.git",
